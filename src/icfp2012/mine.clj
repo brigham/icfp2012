@@ -12,10 +12,12 @@
   (done? [mine])
   (inside? [mine x y])
   (score [mine])
+  (state [mine])
   (dimensions [mine])
   (object-at [mine x y])
   (->String [mine]))
 
+(declare ->Mine)
 (declare find-char)
 (declare move-robot)
 (declare map-update)
@@ -35,11 +37,20 @@
   (wait-turn [mine]
     (map-update mine))
   (abort [mine]
-    mine)
+    (let [new-mine (map-update mine)]
+      (if (not (done? new-mine))
+        (->Mine (:grid new-mine)
+                :abort
+                (+ (:score new-mine) (* 25 (:dead-lambdas new-mine)))
+                (:extant-lambdas new-mine)
+                (:dead-lambdas new-mine))
+        new-mine)))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
     (and (>= x 1) (>= y 1) (<= x (count (nth grid 0))) (<= y (count grid))))
+  (state [mine]
+    state)
   (score [mine]
     score)
   (dimensions [mine]
@@ -89,18 +100,21 @@
                          score
                          extant-lambdas
                          dead-lambdas]
+            
             \\ [(set-chars grid     robot-x     robot-y \space
                                 new-robot-x new-robot-y \R)
                 state
                 (+ score 25)
                 (dec extant-lambdas)
                 (inc dead-lambdas)]
+            
             \O [(set-chars grid     robot-x     robot-y \space
                                 new-robot-x new-robot-y \R)
                 :winning
-                (+ (* 50 dead-lambdas) score)
+                (dec (+ (* 50 dead-lambdas) score))
                 extant-lambdas
                 dead-lambdas]
+            
             \* (if (not= 0 dirx)
                  (let [new-rock-x (+ robot-x dirx dirx)]
                    (if (not= \space (object-at mine new-rock-x robot-y))
@@ -110,71 +124,74 @@
                                        new-rock-x    robot-y \*)
                       state score extant-lambdas dead-lambdas]))
                  [grid state score extant-lambdas dead-lambdas])
+            
             [grid state score extant-lambdas dead-lambdas]))]
-    (->Mine grid state (dec score) extant-lambdas dead-lambdas)))
+    (->Mine grid state score extant-lambdas dead-lambdas)))
 
 (defn- map-update [mine]
-  (let [{:keys [grid state score extant-lambdas dead-lambdas]} mine]
-    (loop [x 1
-           y 1
-           [new-grid new-state] [grid state]]
-      (if (not (inside? mine x y))
-        (if (> y (count grid))
-          (->Mine new-grid new-state score extant-lambdas dead-lambdas)
-          (recur 1 (inc y) [new-grid new-state]))
-        (recur
-         (inc x) y
-         (let [ch (object-at mine x y)]
-           (case ch
-             \* (cond
-                 (= \space (object-at mine x (dec y)))
-                 [(set-chars new-grid x      y  \space
-                                      x (dec y) \*)
-                  (if (and (inside? mine x (- y 2))
-                           (= \R (object-at mine x (- y 2))))
-                    :losing
-                    new-state)]
+  (if (done? mine)
+    mine
+    (let [{:keys [grid state score extant-lambdas dead-lambdas]} mine]
+      (loop [x 1
+             y 1
+             [new-grid new-state] [grid state]]
+        (if (not (inside? mine x y))
+          (if (> y (count grid))
+            (->Mine new-grid new-state (dec score) extant-lambdas dead-lambdas)
+            (recur 1 (inc y) [new-grid new-state]))
+          (recur
+           (inc x) y
+           (let [ch (object-at mine x y)]
+             (case ch
+               \* (cond
+                   (= \space (object-at mine x (dec y)))
+                   [(set-chars new-grid x      y  \space
+                                        x (dec y) \*)
+                    (if (and (inside? mine x (- y 2))
+                             (= \R (object-at mine x (- y 2))))
+                      :losing
+                      new-state)]
 
-                 (and (= \* (object-at mine x (dec y)))
-                      (= \space (object-at mine (inc x) y))
-                      (= \space (object-at mine (inc x) (dec y))))
-                 [(set-chars new-grid      x       y  \space
-                                      (inc x) (dec y) \*)
-                  (if (and (inside? mine (inc x) (- y 2))
-                           (= \R (object-at mine (inc x) (- y 2))))
-                    :losing
-                    new-state)]
+                   (and (= \* (object-at mine x (dec y)))
+                        (= \space (object-at mine (inc x) y))
+                        (= \space (object-at mine (inc x) (dec y))))
+                   [(set-chars new-grid      x       y  \space
+                                        (inc x) (dec y) \*)
+                    (if (and (inside? mine (inc x) (- y 2))
+                             (= \R (object-at mine (inc x) (- y 2))))
+                      :losing
+                      new-state)]
 
-                 (and (= \* (object-at mine x (dec y)))
-                      (or (not= \space (object-at mine (inc x) y))
-                          (not= \space (object-at mine (inc x) (dec y))))
-                      (= \space (object-at mine (dec x) y))
-                      (= \space (object-at mine (dec x) (dec y))))
-                 [(set-chars new-grid      x       y  \space
-                                      (dec x) (dec y) \*)
-                  (if (and (inside? mine (dec x) (- y 2))
-                           (= \R (object-at mine (dec x) (- y 2))))
-                    :losing
-                    new-state)]
+                   (and (= \* (object-at mine x (dec y)))
+                        (or (not= \space (object-at mine (inc x) y))
+                            (not= \space (object-at mine (inc x) (dec y))))
+                        (= \space (object-at mine (dec x) y))
+                        (= \space (object-at mine (dec x) (dec y))))
+                   [(set-chars new-grid      x       y  \space
+                                        (dec x) (dec y) \*)
+                    (if (and (inside? mine (dec x) (- y 2))
+                             (= \R (object-at mine (dec x) (- y 2))))
+                      :losing
+                      new-state)]
 
-                 (and (= \\ (object-at mine x (dec y)))
-                      (= \space (object-at mine (inc x) y))
-                      (= \space (object-at mine (inc x) (dec y))))
-                 [(set-chars new-grid      x       y  \space
-                                      (inc x) (dec y) \*)
-                  (if (and (inside? mine (inc x) (- y 2))
-                           (= \R (object-at mine (inc x) (- y 2))))
-                    :losing
-                    new-state)] 
+                   (and (= \\ (object-at mine x (dec y)))
+                        (= \space (object-at mine (inc x) y))
+                        (= \space (object-at mine (inc x) (dec y))))
+                   [(set-chars new-grid      x       y  \space
+                                        (inc x) (dec y) \*)
+                    (if (and (inside? mine (inc x) (- y 2))
+                             (= \R (object-at mine (inc x) (- y 2))))
+                      :losing
+                      new-state)] 
 
-                 :else
-                 [new-grid new-state])
-             
-             \L (if (= 0 extant-lambdas)
-                  [(set-chars new-grid x y \O) new-state]
-                  [new-grid new-state])
+                   :else
+                   [new-grid new-state])
+               
+               \L (if (= 0 extant-lambdas)
+                    [(set-chars new-grid x y \O) new-state]
+                    [new-grid new-state])
 
-             [new-grid new-state])))))))
+               [new-grid new-state]))))))))
 
 (defn execute-move [mine ch]
   (let [ch (if (char? ch) ch (.charAt ch 0))]
@@ -185,6 +202,21 @@
      \D (move-down mine)
      \W (wait-turn mine)
      \A (abort mine))))
+
+(defn execute-moves
+  ([mine s]
+     (execute-moves mine s (fn [mine])))
+  ([mine s cb]
+     (cb mine)
+     (loop [i 0
+            curr-mine mine]
+       (if (or (>= i (count s))
+               (>= i (apply * (dimensions mine)))
+               (done? curr-mine))
+         curr-mine
+         (let [new-mine (execute-move curr-mine (get s i))]
+           (cb new-mine)
+           (recur (inc i) new-mine))))))
 
 (defn mine-from-reader [r]
   (let [[grid max-length lambdas]
