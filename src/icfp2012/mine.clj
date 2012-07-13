@@ -37,14 +37,11 @@
   (wait-turn [mine]
     (map-update mine))
   (abort [mine]
-    (let [new-mine (map-update mine)]
-      (if (not (done? new-mine))
-        (->Mine (:grid new-mine)
-                :abort
-                (+ (:score new-mine) (* 25 (:dead-lambdas new-mine)))
-                (:extant-lambdas new-mine)
-                (:dead-lambdas new-mine))
-        new-mine)))
+    (->Mine (:grid mine)
+            :abort
+            (dec (+ (:score mine) (* 25 (:dead-lambdas mine))))
+            (:extant-lambdas mine)
+            (:dead-lambdas mine)))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
