@@ -67,9 +67,12 @@
       (str
        (char 27) "[0m"
        (apply str (interpose "\n" above-water))
-       (char 27) "\n[44m"
-       (apply str (interpose "\n" under-water))
-       (char 27) "[0m"))))
+       (if (> (count under-water) 0)
+         (str
+          (char 27) "\n[44m"
+          (apply str (interpose "\n" under-water))
+          (char 27) "[0m")
+         "")))))
 
 (defn- rep->actual [grid rx ry]
   [(dec rx) (- (count grid) ry)])
