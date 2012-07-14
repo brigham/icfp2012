@@ -40,7 +40,7 @@
   (abort [mine]
     (->Mine (:grid mine)
             :abort
-            (dec (+ (:score mine) (* 25 (:dead-lambdas mine))))
+            (+ (:score mine) (* 25 (:dead-lambdas mine)))
             (:extant-lambdas mine)
             (:dead-lambdas mine)
             water-sim))
@@ -209,6 +209,9 @@
                     [new-grid new-state])
 
                [new-grid new-state]))))))))
+
+(defn possible-moves [mine]
+  [\L \R \U \D \W])
 
 (defn execute-move [mine ch]
   (let [ch (if (char? ch) ch (.charAt ch 0))]
