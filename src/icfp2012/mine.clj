@@ -1,5 +1,6 @@
 (ns icfp2012.mine
   (require [clojure.java.io :as io]
+           [icfp2012.index :as index]
            [icfp2012.water :as water])
   (import [java.io StringReader]))
 
@@ -21,13 +22,12 @@
   (->String [mine]))
 
 (declare ->Mine)
-(declare find-char)
 (declare move-robot)
 (declare map-update)
 (declare rep->actual)
 (declare set-char)
 
-(defrecord Mine [grid state score extant-lambdas dead-lambdas water-sim]
+(defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim]
   AMine
   (move-left [mine]
     (map-update (move-robot mine -1 0)))
@@ -45,7 +45,14 @@
             (+ (:score mine) (* 25 (:dead-lambdas mine)))
             (:extant-lambdas mine)
             (:dead-lambdas mine)
+            indices
             water-sim))
+  (location [mine obj]
+    (case obj
+      (\R \L \O) (index/value-for indices obj)))
+  (locations [mine obj]
+    (case obj
+      (\* \\) (index/set-for indices obj)))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
@@ -88,76 +95,82 @@
         (recur updated rest-coords-chars)
         updated))))
 
-(defn- find-char [grid ch]
-  (loop [[row & rest-rows] grid
-         row-num (count grid)]
-    (if row
-      (let [index (.indexOf row ch)]
-        (if (not= -1 index)
-          [(inc index) row-num]
-          (recur rest-rows (dec row-num))))
-      nil)))
-
 (defn- move-robot [mine dirx diry]
   (if (done? mine)
     mine
-    (let [[grid state score extant-lambdas dead-lambdas]
-          (let [{:keys [grid state score extant-lambdas dead-lambdas]} mine
-                [robot-x robot-y] (find-char grid \R)
+    (let [[grid state score extant-lambdas dead-lambdas indices]
+          (let [{:keys [grid state score extant-lambdas dead-lambdas indices]} mine
+                [robot-x robot-y] (location mine \R)
                 new-robot-x (+ dirx robot-x)
                 new-robot-y (+ diry robot-y)]
             (when (not (inside? mine new-robot-x new-robot-y))
-              [grid state score extant-lambdas dead-lambdas])
+              [grid state score extant-lambdas dead-lambdas indices])
             (case (object-at mine new-robot-x new-robot-y)
               (\space \.) [(set-chars grid     robot-x     robot-y \space
-                                      new-robot-x new-robot-y \R)
+                                           new-robot-x new-robot-y \R)
                            state
                            score
                            extant-lambdas
-                           dead-lambdas]
+                           dead-lambdas
+                           (-> indices
+                               (index/remove-from \R [robot-x robot-y])
+                               (index/add-to \R [new-robot-x new-robot-y]))]
               
               \\ [(set-chars grid     robot-x     robot-y \space
-                             new-robot-x new-robot-y \R)
+                                  new-robot-x new-robot-y \R)
                   state
                   (+ score 25)
                   (dec extant-lambdas)
-                  (inc dead-lambdas)]
+                  (inc dead-lambdas)
+                  (-> indices
+                      (index/remove-from \\ [new-robot-x new-robot-y])
+                      (index/remove-from \R [robot-x robot-y])
+                      (index/add-to \R [new-robot-x new-robot-y]))]
               
               \O [(set-chars grid     robot-x     robot-y \space
-                             new-robot-x new-robot-y \R)
+                                  new-robot-x new-robot-y \R)
                   :winning
                   (dec (+ (* 50 dead-lambdas) score))
                   extant-lambdas
-                  dead-lambdas]
+                  dead-lambdas
+                  (-> indices
+                      (index/remove-from \R [robot-x robot-y])
+                      (index/add-to \R [new-robot-x new-robot-y]))]
               
               \* (if (not= 0 dirx)
                    (let [new-rock-x (+ robot-x dirx dirx)]
                      (if (not= \space (object-at mine new-rock-x robot-y))
-                       [grid state score extant-lambdas dead-lambdas]
+                       [grid state score extant-lambdas dead-lambdas indices]
                        [(set-chars grid     robot-x     robot-y \space
-                                   new-robot-x new-robot-y \R
-                                   new-rock-x    robot-y \*)
-                        state score extant-lambdas dead-lambdas]))
-                   [grid state score extant-lambdas dead-lambdas])
+                                        new-robot-x new-robot-y \R
+                                         new-rock-x    robot-y \*)
+                        state score extant-lambdas dead-lambdas
+                        (-> indices
+                            (index/remove-from \* [new-robot-x new-robot-y])
+                            (index/add-to \* [ new-rock-x     robot-y])
+                            (index/remove-from \R [robot-x robot-y])
+                            (index/add-to \R [new-robot-x new-robot-y]))]))
+                   [grid state score extant-lambdas dead-lambdas indices])
               
-              [grid state score extant-lambdas dead-lambdas]))]
-      (->Mine grid state score extant-lambdas dead-lambdas (:water-sim mine)))))
+              [grid state score extant-lambdas dead-lambdas indices]))]
+      (->Mine grid state score extant-lambdas dead-lambdas indices (:water-sim mine)))))
 
 (defn- map-update [mine]
   (if (done? mine)
     mine
-    (let [{:keys [grid state score extant-lambdas dead-lambdas water-sim]} mine]
+    (let [{:keys [grid state score extant-lambdas dead-lambdas indices water-sim]} mine]
       (loop [x 1
              y 1
              [new-grid new-state] [grid state]]
         (if (not (inside? mine x y))
           (if (> y (count grid))
-            (let [new-water-sim (water/simulate water-sim (second (find-char grid \R)))]
+            (let [new-water-sim (water/simulate water-sim (second (location mine \R)))]
               (->Mine new-grid
                       (if (not (water/operating? new-water-sim)) :losing new-state)
                       (dec score)
                       extant-lambdas
                       dead-lambdas
+                      indices
                       new-water-sim))
             (recur 1 (inc y) [new-grid new-state]))
           (recur
@@ -231,8 +244,8 @@
   (if (done? mine)
     []
     (concat
-     (let [original-robot (find-char (:grid mine) \R)] ;; XXX: gross, should be on protocol
-       (filter #(not= original-robot (find-char (:grid (second %)) \R))
+     (let [original-robot (location mine \R)] ;; XXX: gross, should be on protocol
+       (filter #(not= original-robot (location (second %) \R))
                (map #(vector % (execute-move mine %)) [\L \R \U \D])))
      (let [waiting (wait-turn mine)]
        (if (not= (:grid mine) (:grid waiting))
@@ -254,26 +267,53 @@
            (cb new-mine)
            (recur (inc i) new-mine))))))
 
+(defn- compare-coords [c1 c2]
+  (let [cmp-y (compare (c1 0) (c2 0))]
+    (if (= cmp-y 0)
+      (compare (c1 1) (c2 1))
+      cmp-y)))
+
 (defn mine-from-reader [r]
-  (let [[grid max-length lambdas]
+  (let [[grid max-length lambdas indices]
         (loop [grid []
                row []
                max-length 0
-               lambdas 0]
+               lambdas 0
+               indices (-> (index/create-index-group)
+                           (index/create-index \R compare-coords)
+                           (index/create-index \L compare-coords)
+                           (index/create-index \* compare-coords)
+                           (index/create-index \\ compare-coords))]
           (let [next (.read r)]
             (if (= -1 next)
               (if (> (count row) 0)
-                [(conj grid row) (max max-length (count row)) lambdas] 
-                [grid max-length lambdas])
+                [(conj grid row) (max max-length (count row)) lambdas indices] 
+                [grid max-length lambdas indices])
               (let [ch (char next)]
                 (case ch
                   \newline (if (or (> (count row) 0) (= (count grid) 0))
-                             (recur (conj grid row) [] (max max-length (count row)) lambdas)
-                             [grid max-length lambdas])
+                             (recur (conj grid row) [] (max max-length (count row)) lambdas indices)
+                             [grid max-length lambdas indices])
                   
-                  (\R \# \* \L \O \. \space) (recur grid (conj row ch) max-length lambdas)
+                  (\# \. \space) (recur grid (conj row ch) max-length lambdas indices)
+
+                  (\R \L) (recur grid
+                                 (conj row ch)
+                                 max-length
+                                 lambdas
+                                 (index/add-to indices ch [(inc (count row)) (count grid)]))
+
+                  \* (recur grid
+                            (conj row ch)
+                            max-length
+                            lambdas
+                            (index/add-to indices ch [(inc (count row)) (count grid)]))
                   
-                  \\ (recur grid (conj row ch) max-length (inc lambdas)))))))
+                  \\ (recur grid
+                            (conj row ch)
+                            max-length
+                            (inc lambdas)
+                            (index/add-to indices ch [(inc (count row)) (count grid)])))))))
 
         [water flooding waterproof]
         (loop [water 0
@@ -287,6 +327,7 @@
                   "Water" (recur (Integer/parseInt value) flooding waterproof)
                   "Flooding" (recur water (Integer/parseInt value) waterproof)
                   "Waterproof" (recur water flooding (Integer/parseInt value)))))))]
+    
     (->Mine (vec (map #(let [deficit (- max-length (count %))]
                         (if (> deficit 0)
                           (apply conj % (repeat deficit \space))
@@ -295,6 +336,13 @@
            0
            lambdas
            0
+           (loop [[key & rest-keys] (index/index-keys indices)
+                  updated-indices indices]
+             (if (not key)
+               updated-indices
+               (let [values (index/set-for updated-indices key)
+                     updated-values (map (fn [c] (update-in c [1] #(- (count grid) %))) values)]
+                 (recur rest-keys (index/add-all (index/clear updated-indices key) key updated-values)))))
            (water/->WaterSim water flooding waterproof 0 0))))
 
 (defn mine-from-thing [t]

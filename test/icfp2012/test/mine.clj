@@ -53,7 +53,7 @@
         move-3 (abort move-2)]
     (is (done? move-3))
     (is (= :abort (state move-3)))
-    (is (= 47 (score move-3)))))
+    (is (= 48 (score move-3)))))
 
 (deftest test-win
   (let [mine (mine-from-thing "data/contest1.map")
