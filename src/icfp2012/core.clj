@@ -49,7 +49,13 @@
         (recur (q/dequeue the-search))))))
 
 (defn- solve-mine [mine]
-  (solver/search mine 100))
+  (let [[solution moves] (time (solver/search mine 200000))]
+    (println "Turn:" (get-in solution [:water-sim :steps])
+             "Next Rise:" (water/steps-til-rise (:water-sim solution))
+             "Air:" (water/steps-til-lose (:water-sim solution)))
+    (println (mine/->String solution))
+    (println "State:" (mine/state solution) "Score:" (mine/score solution))
+    (println "Moves:" (apply str moves))))
 
 (defn -main [& args]
   (let [mine (mine/mine-from-thing (first args))]

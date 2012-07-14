@@ -10,6 +10,8 @@
   (move-down [mine])
   (wait-turn [mine])
   (abort [mine])
+  (location [mine obj])
+  (locations [mine obj])
   (done? [mine])
   (inside? [mine x y])
   (score [mine])
@@ -97,47 +99,49 @@
       nil)))
 
 (defn- move-robot [mine dirx diry]
-  (let [[grid state score extant-lambdas dead-lambdas]
-        (let [{:keys [grid state score extant-lambdas dead-lambdas]} mine
-              [robot-x robot-y] (find-char grid \R)
-              new-robot-x (+ dirx robot-x)
-              new-robot-y (+ diry robot-y)]
-          (when (not (inside? mine new-robot-x new-robot-y))
-            [grid state score extant-lambdas dead-lambdas])
-          (case (object-at mine new-robot-x new-robot-y)
-            (\space \.) [(set-chars grid     robot-x     robot-y \space
-                                         new-robot-x new-robot-y \R)
-                         state
-                         score
-                         extant-lambdas
-                         dead-lambdas]
-            
-            \\ [(set-chars grid     robot-x     robot-y \space
-                                new-robot-x new-robot-y \R)
-                state
-                (+ score 25)
-                (dec extant-lambdas)
-                (inc dead-lambdas)]
-            
-            \O [(set-chars grid     robot-x     robot-y \space
-                                new-robot-x new-robot-y \R)
-                :winning
-                (dec (+ (* 50 dead-lambdas) score))
-                extant-lambdas
-                dead-lambdas]
-            
-            \* (if (not= 0 dirx)
-                 (let [new-rock-x (+ robot-x dirx dirx)]
-                   (if (not= \space (object-at mine new-rock-x robot-y))
-                     [grid state score extant-lambdas dead-lambdas]
-                     [(set-chars grid     robot-x     robot-y \space
-                                      new-robot-x new-robot-y \R
-                                       new-rock-x    robot-y \*)
-                      state score extant-lambdas dead-lambdas]))
-                 [grid state score extant-lambdas dead-lambdas])
-            
-            [grid state score extant-lambdas dead-lambdas]))]
-    (->Mine grid state score extant-lambdas dead-lambdas (:water-sim mine))))
+  (if (done? mine)
+    mine
+    (let [[grid state score extant-lambdas dead-lambdas]
+          (let [{:keys [grid state score extant-lambdas dead-lambdas]} mine
+                [robot-x robot-y] (find-char grid \R)
+                new-robot-x (+ dirx robot-x)
+                new-robot-y (+ diry robot-y)]
+            (when (not (inside? mine new-robot-x new-robot-y))
+              [grid state score extant-lambdas dead-lambdas])
+            (case (object-at mine new-robot-x new-robot-y)
+              (\space \.) [(set-chars grid     robot-x     robot-y \space
+                                      new-robot-x new-robot-y \R)
+                           state
+                           score
+                           extant-lambdas
+                           dead-lambdas]
+              
+              \\ [(set-chars grid     robot-x     robot-y \space
+                             new-robot-x new-robot-y \R)
+                  state
+                  (+ score 25)
+                  (dec extant-lambdas)
+                  (inc dead-lambdas)]
+              
+              \O [(set-chars grid     robot-x     robot-y \space
+                             new-robot-x new-robot-y \R)
+                  :winning
+                  (dec (+ (* 50 dead-lambdas) score))
+                  extant-lambdas
+                  dead-lambdas]
+              
+              \* (if (not= 0 dirx)
+                   (let [new-rock-x (+ robot-x dirx dirx)]
+                     (if (not= \space (object-at mine new-rock-x robot-y))
+                       [grid state score extant-lambdas dead-lambdas]
+                       [(set-chars grid     robot-x     robot-y \space
+                                   new-robot-x new-robot-y \R
+                                   new-rock-x    robot-y \*)
+                        state score extant-lambdas dead-lambdas]))
+                   [grid state score extant-lambdas dead-lambdas])
+              
+              [grid state score extant-lambdas dead-lambdas]))]
+      (->Mine grid state score extant-lambdas dead-lambdas (:water-sim mine)))))
 
 (defn- map-update [mine]
   (if (done? mine)
@@ -222,6 +226,18 @@
      \D (move-down mine)
      \W (wait-turn mine)
      \A (abort mine))))
+
+(defn next-mines [mine]
+  (if (done? mine)
+    []
+    (concat
+     (let [original-robot (find-char (:grid mine) \R)] ;; XXX: gross, should be on protocol
+       (filter #(not= original-robot (find-char (:grid (second %)) \R))
+               (map #(vector % (execute-move mine %)) [\L \R \U \D])))
+     (let [waiting (wait-turn mine)]
+       (if (not= (:grid mine) (:grid waiting))
+         [[\W waiting]]
+         [])))))
 
 (defn execute-moves
   ([mine s]
