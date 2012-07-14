@@ -52,7 +52,7 @@
       (\R \L \O) (index/value-for indices obj)))
   (locations [mine obj]
     (case obj
-      (\* \\) (index/set-for indices obj)))
+      (\* \\) (seq (index/set-for indices obj))))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
@@ -158,74 +158,84 @@
 (defn- map-update [mine]
   (if (done? mine)
     mine
-    (let [{:keys [grid state score extant-lambdas dead-lambdas indices water-sim]} mine]
-      (loop [x 1
-             y 1
-             [new-grid new-state] [grid state]]
-        (if (not (inside? mine x y))
-          (if (> y (count grid))
-            (let [new-water-sim (water/simulate water-sim (second (location mine \R)))]
-              (->Mine new-grid
-                      (if (not (water/operating? new-water-sim)) :losing new-state)
-                      (dec score)
-                      extant-lambdas
-                      dead-lambdas
-                      indices
-                      new-water-sim))
-            (recur 1 (inc y) [new-grid new-state]))
-          (recur
-           (inc x) y
-           (let [ch (object-at mine x y)]
-             (case ch
-               \* (cond
-                   (= \space (object-at mine x (dec y)))
-                   [(set-chars new-grid x      y  \space
-                                        x (dec y) \*)
-                    (if (and (inside? mine x (- y 2))
-                             (= \R (object-at mine x (- y 2))))
-                      :losing
-                      new-state)]
+    (let [{:keys [grid state score extant-lambdas dead-lambdas indices water-sim]} mine
+          rocks-moved (loop [[rock & rest-rocks] (locations mine \*)
+                             [new-grid new-state new-indices] [grid state indices]]
+                        (if (nil? rock)
+                          (let [new-water-sim (water/simulate water-sim (second (location mine \R)))
+                                [new-grid new-indices] (if (> extant-lambdas 0)
+                                                         [new-grid new-indices]
+                                                         (if-let [closed-lift (location mine \L)]
+                                                           [(set-chars new-grid (closed-lift 0) (closed-lift 1) \O)
+                                                            (-> new-indices
+                                                                (index/remove-from \L closed-lift)
+                                                                (index/add-to \O closed-lift))]
+                                                           [new-grid new-indices]))]
+                            (->Mine new-grid
+                                    (if (not (water/operating? new-water-sim)) :losing new-state)
+                                    (dec score)
+                                    extant-lambdas
+                                    dead-lambdas
+                                    new-indices
+                                    new-water-sim))
+                          (recur rest-rocks
+                                 (let [[x y] rock]
+                                   (cond
+                                    (= \space (object-at mine x (dec y)))
+                                    [(set-chars new-grid x      y  \space
+                                                         x (dec y) \*)
+                                     (if (and (inside? mine x (- y 2))
+                                              (= \R (object-at mine x (- y 2))))
+                                       :losing
+                                       new-state)
+                                     (-> new-indices
+                                         (index/remove-from \* [x y])
+                                         (index/add-to \* [x (dec y)]))]
 
-                   (and (= \* (object-at mine x (dec y)))
-                        (= \space (object-at mine (inc x) y))
-                        (= \space (object-at mine (inc x) (dec y))))
-                   [(set-chars new-grid      x       y  \space
-                                        (inc x) (dec y) \*)
-                    (if (and (inside? mine (inc x) (- y 2))
-                             (= \R (object-at mine (inc x) (- y 2))))
-                      :losing
-                      new-state)]
+                                    (and (= \* (object-at mine x (dec y)))
+                                         (= \space (object-at mine (inc x) y))
+                                         (= \space (object-at mine (inc x) (dec y))))
+                                    [(set-chars new-grid      x       y  \space
+                                                         (inc x) (dec y) \*)
+                                     (if (and (inside? mine (inc x) (- y 2))
+                                              (= \R (object-at mine (inc x) (- y 2))))
+                                       :losing
+                                       new-state)
+                                     (-> new-indices
+                                         (index/remove-from \* [x y])
+                                         (index/add-to \* [(inc x) (dec y)]))]
 
-                   (and (= \* (object-at mine x (dec y)))
-                        (or (not= \space (object-at mine (inc x) y))
-                            (not= \space (object-at mine (inc x) (dec y))))
-                        (= \space (object-at mine (dec x) y))
-                        (= \space (object-at mine (dec x) (dec y))))
-                   [(set-chars new-grid      x       y  \space
-                                        (dec x) (dec y) \*)
-                    (if (and (inside? mine (dec x) (- y 2))
-                             (= \R (object-at mine (dec x) (- y 2))))
-                      :losing
-                      new-state)]
+                                    (and (= \* (object-at mine x (dec y)))
+                                         (or (not= \space (object-at mine (inc x) y))
+                                             (not= \space (object-at mine (inc x) (dec y))))
+                                         (= \space (object-at mine (dec x) y))
+                                         (= \space (object-at mine (dec x) (dec y))))
+                                    [(set-chars new-grid      x       y  \space
+                                                         (dec x) (dec y) \*)
+                                     (if (and (inside? mine (dec x) (- y 2))
+                                              (= \R (object-at mine (dec x) (- y 2))))
+                                       :losing
+                                       new-state)
+                                     (-> new-indices
+                                         (index/remove-from \* [x y])
+                                         (index/add-to \* [(dec x) (dec y)]))]
 
-                   (and (= \\ (object-at mine x (dec y)))
-                        (= \space (object-at mine (inc x) y))
-                        (= \space (object-at mine (inc x) (dec y))))
-                   [(set-chars new-grid      x       y  \space
-                                        (inc x) (dec y) \*)
-                    (if (and (inside? mine (inc x) (- y 2))
-                             (= \R (object-at mine (inc x) (- y 2))))
-                      :losing
-                      new-state)] 
+                                    (and (= \\ (object-at mine x (dec y)))
+                                         (= \space (object-at mine (inc x) y))
+                                         (= \space (object-at mine (inc x) (dec y))))
+                                    [(set-chars new-grid      x       y  \space
+                                                         (inc x) (dec y) \*)
+                                     (if (and (inside? mine (inc x) (- y 2))
+                                              (= \R (object-at mine (inc x) (- y 2))))
+                                       :losing
+                                       new-state)
+                                     (-> new-indices
+                                         (index/remove-from \* [x y])
+                                         (index/add-to \* [(inc x) (dec y)]))] 
 
-                   :else
-                   [new-grid new-state])
-               
-               \L (if (= 0 extant-lambdas)
-                    [(set-chars new-grid x y \O) new-state]
-                    [new-grid new-state])
-
-               [new-grid new-state]))))))))
+                                    :else
+                                    [new-grid new-state new-indices])))))]
+      rocks-moved)))
 
 (defn possible-moves [mine]
   [\L \R \U \D \W])
