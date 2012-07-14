@@ -115,6 +115,7 @@
 
 (deftest rock-crash
   (let [mine (mine-from-string "
+#R  #
 #* *#
 #* *#
 #####")
