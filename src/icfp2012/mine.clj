@@ -1,5 +1,6 @@
 (ns icfp2012.mine
-  (require [clojure.java.io :as io])
+  (require [clojure.java.io :as io]
+           [icfp2012.water :as water])
   (import [java.io StringReader]))
 
 (defprotocol AMine
@@ -24,7 +25,7 @@
 (declare rep->actual)
 (declare set-char)
 
-(defrecord Mine [grid state score extant-lambdas dead-lambdas]
+(defrecord Mine [grid state score extant-lambdas dead-lambdas water-sim]
   AMine
   (move-left [mine]
     (map-update (move-robot mine -1 0)))
@@ -41,7 +42,8 @@
             :abort
             (dec (+ (:score mine) (* 25 (:dead-lambdas mine))))
             (:extant-lambdas mine)
-            (:dead-lambdas mine)))
+            (:dead-lambdas mine)
+            water-sim))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
@@ -58,7 +60,16 @@
           (nth ay)
           (nth ax))))
   (->String [mine]
-    (apply str (interpose "\n" (map #(apply str %) grid)))))
+    (let [rows (map #(apply str %) grid)
+          water-level (get-in mine [:water-sim :water-level])
+          above-water (take (- (count grid) water-level) rows)
+          under-water (drop (- (count grid) water-level) rows)]
+      (str
+       (char 27) "[0m"
+       (apply str (interpose "\n" above-water))
+       (char 27) "\n[44m"
+       (apply str (interpose "\n" under-water))
+       (char 27) "[0m"))))
 
 (defn- rep->actual [grid rx ry]
   [(dec rx) (- (count grid) ry)])
@@ -123,18 +134,24 @@
                  [grid state score extant-lambdas dead-lambdas])
             
             [grid state score extant-lambdas dead-lambdas]))]
-    (->Mine grid state score extant-lambdas dead-lambdas)))
+    (->Mine grid state score extant-lambdas dead-lambdas (:water-sim mine))))
 
 (defn- map-update [mine]
   (if (done? mine)
     mine
-    (let [{:keys [grid state score extant-lambdas dead-lambdas]} mine]
+    (let [{:keys [grid state score extant-lambdas dead-lambdas water-sim]} mine]
       (loop [x 1
              y 1
              [new-grid new-state] [grid state]]
         (if (not (inside? mine x y))
           (if (> y (count grid))
-            (->Mine new-grid new-state (dec score) extant-lambdas dead-lambdas)
+            (let [new-water-sim (water/simulate water-sim (second (find-char grid \R)))]
+              (->Mine new-grid
+                      (if (not (water/operating? new-water-sim)) :losing new-state)
+                      (dec score)
+                      extant-lambdas
+                      dead-lambdas
+                      new-water-sim))
             (recur 1 (inc y) [new-grid new-state]))
           (recur
            (inc x) y
@@ -228,11 +245,26 @@
                 [grid max-length lambdas])
               (let [ch (char next)]
                 (case ch
-                  \newline (recur (conj grid row) [] (max max-length (count row)) lambdas)
+                  \newline (if (or (> (count row) 0) (= (count grid) 0))
+                             (recur (conj grid row) [] (max max-length (count row)) lambdas)
+                             [grid max-length lambdas])
                   
                   (\R \# \* \L \O \. \space) (recur grid (conj row ch) max-length lambdas)
                   
-                  \\ (recur grid (conj row ch) max-length (inc lambdas)))))))]
+                  \\ (recur grid (conj row ch) max-length (inc lambdas)))))))
+
+        [water flooding waterproof]
+        (loop [water 0
+               flooding 0
+               waterproof 10]
+          (let [line (.readLine r)]
+            (if (nil? line)
+              [water flooding waterproof]
+              (let [[key value] (.split line "\\s+")]
+                (case key
+                  "Water" (recur (Integer/parseInt value) flooding waterproof)
+                  "Flooding" (recur water (Integer/parseInt value) waterproof)
+                  "Waterproof" (recur water flooding (Integer/parseInt value)))))))]
     (->Mine (vec (map #(let [deficit (- max-length (count %))]
                         (if (> deficit 0)
                           (apply conj % (repeat deficit \space))
@@ -240,11 +272,11 @@
            :running
            0
            lambdas
-           0)))
+           0
+           (water/->WaterSim water flooding waterproof 0 0))))
 
 (defn mine-from-thing [t]
   (mine-from-reader (io/reader t)))
 
 (defn mine-from-string [s]
-  (mine-from-reader (StringReader. s)))
-
+  (mine-from-reader (io/reader (StringReader. s))))
