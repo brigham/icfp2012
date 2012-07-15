@@ -13,6 +13,12 @@
      (println msg o)
      o))
 
+(defn- compare-coords [c1 c2]
+  (let [cmp-y (compare (c1 0) (c2 0))]
+    (if (= cmp-y 0)
+      (compare (c1 1) (c2 1))
+      cmp-y)))
+
 (defprotocol AMine
   (move-left [mine])
   (move-right [mine])
@@ -36,7 +42,7 @@
 (declare rep->actual)
 (declare set-char)
 
-(defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim tramps]
+(defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim tramps beard-rate beard-remaining razors]
   AMine
   (move-left [mine]
     (map-update (move-robot mine -1 0)))
@@ -57,7 +63,7 @@
       (\R \L \O) (index/value-for indices obj)))
   (locations [mine obj]
     (case obj
-      (\* \\ \A \1) (seq (index/set-for indices obj))))
+      (\* \\ \A \1 \W) (seq (index/set-for indices obj))))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
@@ -179,10 +185,11 @@
 (defn- map-update [mine]
   (if (done? mine)
     mine
-    (let [{:keys [grid state score extant-lambdas dead-lambdas indices water-sim]} mine
-          rocks-moved (loop [[rock & rest-rocks] (locations mine \*)
+    (let [{:keys [grid state score extant-lambdas dead-lambdas indices water-sim beard-rate beard-remaining]} mine
+          rocks-moved (loop [[rock & rest-rocks :as all-rocks] (locations mine \*)
+                             [beard & rest-beards :as all-beards] (if (zero? beard-remaining) (locations mine \W) [])
                              [new-grid new-state new-indices] [grid state indices]]
-                        (if (nil? rock)
+                        (if (and (nil? rock) (nil? beard))
                           (let [new-water-sim (water/simulate water-sim (second (location mine \R)))
                                 [new-grid new-indices] (if (> extant-lambdas 0)
                                                          [new-grid new-indices]
@@ -197,17 +204,21 @@
                               :state (if (not (water/operating? new-water-sim)) :losing new-state)
                               :score (dec score)
                               :indices new-indices
-                              :water-sim new-water-sim))
-                          (recur rest-rocks
-                                 (let [[x y] rock
-                                       rock-type (object-at mine x y)]
-                                   (cond
-                                    ;; Rocks fall straight down
-                                    (= \space (object-at mine x (dec y)))
-                                    (let [horock-break (and (= \@ rock-type)
-                                                            (not= \space (object-at mine x (- y 2))))]
-                                      [(set-chars new-grid x      y  \space
-                                                           x (dec y) (if horock-break \\ rock-type))
+                              :water-sim new-water-sim
+                              :beard-remaining (mod (dec beard-remaining) beard-rate)))
+                          (if (or (nil? beard)
+                                  (and (not (nil? rock)) (< (compare-coords rock beard) 0)))
+                            (recur rest-rocks
+                                   all-beards
+                                   (let [[x y] rock
+                                         rock-type (object-at mine x y)]
+                                     (cond
+                                      ;; Rocks fall straight down
+                                      (= \space (object-at mine x (dec y)))
+                                      (let [horock-break (and (= \@ rock-type)
+                                                              (not= \space (object-at mine x (- y 2))))]
+                                        [(set-chars new-grid x      y  \space
+                                                    x (dec y) (if horock-break \\ rock-type))
                                          (if (= \R (object-at mine x (- y 2)))
                                            :losing
                                            new-state)
@@ -221,73 +232,92 @@
                                                  (index/add-to \\ [x (dec y)]))
                                              rock-moved))])
 
-                                    ;; Rocks on top of rocks fall to the right
-                                    (and (#{\* \@} (object-at mine x (dec y)))
-                                         (= \space (object-at mine (inc x) y))
-                                         (= \space (object-at mine (inc x) (dec y))))
-                                    (let [horock-break (and (= \@ rock-type)
-                                                            (not= \space (object-at mine (inc x) (- y 2))))]
-                                      [(set-chars new-grid      x       y  \space
-                                                           (inc x) (dec y) (if horock-break \\ rock-type))
-                                       (if (= \R (object-at mine (inc x) (- y 2)))
-                                         :losing
-                                         new-state)
-                                       (let [rock-moved
-                                             (-> new-indices
-                                                 (index/remove-from \* [x y])
-                                                 (index/add-to \* [(inc x) (dec y)]))]
-                                         (if horock-break
-                                           (-> rock-moved
-                                               (index/remove-from \* [x (dec y)])
-                                               (index/add-to \\ [(inc x) (dec y)]))
-                                           rock-moved))])
+                                      ;; Rocks on top of rocks fall to the right
+                                      (and (#{\* \@} (object-at mine x (dec y)))
+                                           (= \space (object-at mine (inc x) y))
+                                           (= \space (object-at mine (inc x) (dec y))))
+                                      (let [horock-break (and (= \@ rock-type)
+                                                              (not= \space (object-at mine (inc x) (- y 2))))]
+                                        [(set-chars new-grid      x       y  \space
+                                                    (inc x) (dec y) (if horock-break \\ rock-type))
+                                         (if (= \R (object-at mine (inc x) (- y 2)))
+                                           :losing
+                                           new-state)
+                                         (let [rock-moved
+                                               (-> new-indices
+                                                   (index/remove-from \* [x y])
+                                                   (index/add-to \* [(inc x) (dec y)]))]
+                                           (if horock-break
+                                             (-> rock-moved
+                                                 (index/remove-from \* [x (dec y)])
+                                                 (index/add-to \\ [(inc x) (dec y)]))
+                                             rock-moved))])
 
-                                    ;; Rocks on top of rocks fall to the left if right blocked
-                                    (and (#{\* \@} (object-at mine x (dec y)))
-                                         (or (not= \space (object-at mine (inc x) y))
-                                             (not= \space (object-at mine (inc x) (dec y))))
-                                         (= \space (object-at mine (dec x) y))
-                                         (= \space (object-at mine (dec x) (dec y))))
-                                    (let [horock-break (and (= \@ rock-type)
-                                                            (not= \space (object-at mine (dec x) (- y 2))))]
-                                      [(set-chars new-grid      x       y  \space
-                                                           (dec x) (dec y) (if horock-break \\ rock-type))
-                                       (if (= \R (object-at mine (dec x) (- y 2)))
-                                         :losing
-                                         new-state)
-                                       (let [rock-moved
-                                             (-> new-indices
-                                                 (index/remove-from \* [x y])
-                                                 (index/add-to \* [(dec x) (dec y)]))]
-                                         (if horock-break
-                                           (-> rock-moved
-                                               (index/remove-from \* [x (dec y)])
-                                               (index/add-to \\ [(dec x) (dec y)]))
-                                           rock-moved))])
+                                      ;; Rocks on top of rocks fall to the left if right blocked
+                                      (and (#{\* \@} (object-at mine x (dec y)))
+                                           (or (not= \space (object-at mine (inc x) y))
+                                               (not= \space (object-at mine (inc x) (dec y))))
+                                           (= \space (object-at mine (dec x) y))
+                                           (= \space (object-at mine (dec x) (dec y))))
+                                      (let [horock-break (and (= \@ rock-type)
+                                                              (not= \space (object-at mine (dec x) (- y 2))))]
+                                        [(set-chars new-grid      x       y  \space
+                                                    (dec x) (dec y) (if horock-break \\ rock-type))
+                                         (if (= \R (object-at mine (dec x) (- y 2)))
+                                           :losing
+                                           new-state)
+                                         (let [rock-moved
+                                               (-> new-indices
+                                                   (index/remove-from \* [x y])
+                                                   (index/add-to \* [(dec x) (dec y)]))]
+                                           (if horock-break
+                                             (-> rock-moved
+                                                 (index/remove-from \* [x (dec y)])
+                                                 (index/add-to \\ [(dec x) (dec y)]))
+                                             rock-moved))])
 
-                                    ;; Rocks on top of lambdas fall to the right
-                                    (and (= \\ (object-at mine x (dec y)))
-                                         (= \space (object-at mine (inc x) y))
-                                         (= \space (object-at mine (inc x) (dec y))))
-                                    (let [horock-break (and (= \@ rock-type)
-                                                            (not= \space (object-at mine (inc x) (- y 2))))]
-                                      [(set-chars new-grid      x       y  \space
-                                                  (inc x) (dec y) (if horock-break \\ rock-type))
-                                       (if (= \R (object-at mine (inc x) (- y 2)))
-                                         :losing
-                                         new-state)
-                                       (let [rock-moved
-                                             (-> new-indices
-                                                 (index/remove-from \* [x y])
-                                                 (index/add-to \* [(inc x) (dec y)]))]
-                                         (if horock-break
-                                           (-> rock-moved
-                                               (index/remove-from \* [x (dec y)])
-                                               (index/add-to \\ [(inc x) (dec y)]))
-                                           rock-moved))]) 
+                                      ;; Rocks on top of lambdas fall to the right
+                                      (and (= \\ (object-at mine x (dec y)))
+                                           (= \space (object-at mine (inc x) y))
+                                           (= \space (object-at mine (inc x) (dec y))))
+                                      (let [horock-break (and (= \@ rock-type)
+                                                              (not= \space (object-at mine (inc x) (- y 2))))]
+                                        [(set-chars new-grid      x       y  \space
+                                                    (inc x) (dec y) (if horock-break \\ rock-type))
+                                         (if (= \R (object-at mine (inc x) (- y 2)))
+                                           :losing
+                                           new-state)
+                                         (let [rock-moved
+                                               (-> new-indices
+                                                   (index/remove-from \* [x y])
+                                                   (index/add-to \* [(inc x) (dec y)]))]
+                                           (if horock-break
+                                             (-> rock-moved
+                                                 (index/remove-from \* [x (dec y)])
+                                                 (index/add-to \\ [(inc x) (dec y)]))
+                                             rock-moved))]) 
 
-                                    :else
-                                    [new-grid new-state new-indices])))))]
+                                      :else
+                                      [new-grid new-state new-indices])))
+                            (recur all-rocks
+                                   rest-beards
+                                   (let [[x y] beard
+                                         grow-beard (fn [[new-grid new-indices] cx cy]
+                                                      (if (= \space (object-at mine cx cy))
+                                                        [(set-chars new-grid cx cy \W)
+                                                         (index/add-to new-indices \W [cx cy])]
+                                                        [new-grid new-indices]))
+                                         [new-grid new-indices]
+                                         (-> [new-grid new-indices]
+                                             (grow-beard (dec x) (dec y))
+                                             (grow-beard x (dec y))
+                                             (grow-beard (inc x) (dec y))
+                                             (grow-beard (dec x) y)
+                                             (grow-beard (inc x) y)
+                                             (grow-beard (dec x) (inc y))
+                                             (grow-beard x (inc y))
+                                             (grow-beard (inc x) (inc y)))]
+                                     [new-grid new-state new-indices])))))]
       rocks-moved)))
 
 (defn possible-moves [mine]
@@ -330,12 +360,6 @@
            (cb new-mine)
            (recur (inc i) new-mine))))))
 
-(defn- compare-coords [c1 c2]
-  (let [cmp-y (compare (c1 0) (c2 0))]
-    (if (= cmp-y 0)
-      (compare (c1 1) (c2 1))
-      cmp-y)))
-
 (defn mine-from-reader [r]
   (let [[grid max-length lambdas indices]
         (loop [grid []
@@ -348,7 +372,8 @@
                            (index/create-index \* compare-coords)
                            (index/create-index \\ compare-coords)
                            (index/create-index \A compare-coords)
-                           (index/create-index \1 compare-coords))]
+                           (index/create-index \1 compare-coords)
+                           (index/create-index \W compare-coords))]
           (let [next (.read r)]
             (if (= -1 next)
               (if (> (count row) 0)
@@ -360,7 +385,7 @@
                              (recur (conj grid row) [] (max max-length (count row)) lambdas indices)
                              [grid max-length lambdas indices])
                   
-                  (\# \. \space) (recur grid (conj row ch) max-length lambdas indices)
+                  (\# \. \space \!) (recur grid (conj row ch) max-length lambdas indices)
 
                   (\R \L) (recur grid
                                  (conj row ch)
@@ -378,7 +403,13 @@
                             (conj row ch)
                             max-length
                             (inc lambdas)
-                            (index/add-to indices ch [(inc (count row)) (count grid)]))
+                            (index/add-to indices \\ [(inc (count row)) (count grid)]))
+
+                  \W (recur grid
+                            (conj row ch)
+                            max-length
+                            lambdas
+                            (index/add-to indices \W [(inc (count row)) (count grid)]))
 
                   (\A \B \C \D \E \F \G \H \I) (recur grid
                                                       (conj row ch)
@@ -428,7 +459,10 @@
                      updated-values (map (fn [c] (update-in c [1] #(- (count grid) %))) values)]
                  (recur rest-keys (index/add-all (index/clear updated-indices key) key updated-values)))))
            (water/->WaterSim water flooding waterproof 0 0)
-           (tramps/create-trampoline-system trampolines))))
+           (tramps/create-trampoline-system trampolines)
+           growth
+           (dec growth)
+           razors)))
 
 (defn mine-from-thing [t]
   (mine-from-reader (io/reader t)))
