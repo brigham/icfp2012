@@ -11,8 +11,9 @@
                   (apply
                    q/enqueue
                    (q/dequeue states)
-                   (map (fn [state] (into state {:cost (+ (:cost state) (:cost next))
-                                                 :previous next}))
+                   (map (fn [state]
+                          (into state {:cost (+ (:cost state) (:cost next))
+                                       :previous next}))
                         (filter #(not (seen (:state %)))
                                 (next-states-fn (:state next)))))
                   (conj seen (next :state))

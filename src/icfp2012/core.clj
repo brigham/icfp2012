@@ -34,22 +34,22 @@
     (dotimes [y (second (mine/dimensions state))]
       (print (str (char 27) "[A")))
     (flush)
-                                        ;      (Thread/sleep 60)
-    )
+    (Thread/sleep 60))
   (dotimes [y (second (mine/dimensions (:state (first solution))))]
     (println))
   (println (map :cost solution))
   (println (apply str (reverse (map :move solution)))))
 
 (defn- solve-mine-with-a* [mine]
-  (loop [the-search (solver/search-a* mine)]
+  (loop [the-search (time (solver/search-a* mine 5000))]
     (let [solution (a*/solution-seq (q/next the-search))]
       (when (not (nil? solution))
         (dump-solution solution)
-        (recur (q/dequeue the-search))))))
+        ;(recur (q/dequeue the-search))
+        ))))
 
 (defn- solve-mine [mine]
-  (let [[solution moves] (time (solver/search mine 200000))]
+  (let [[solution moves] (time (solver/search mine 800000))]
     (println "Turn:" (get-in solution [:water-sim :steps])
              "Next Rise:" (water/steps-til-rise (:water-sim solution))
              "Air:" (water/steps-til-lose (:water-sim solution)))
@@ -61,4 +61,4 @@
   (let [mine (mine/mine-from-thing (first args))]
     (if (> (count args) 1)
       (run-solution mine (second args))
-      (solve-mine mine))))
+      (solve-mine-with-a* mine))))
