@@ -1,6 +1,7 @@
 (ns icfp2012.mine
   (require [clojure.java.io :as io]
            [icfp2012.index :as index]
+           [icfp2012.trampoline :as tramps]
            [icfp2012.water :as water])
   (import [java.io StringReader]))
 
@@ -27,7 +28,7 @@
 (declare rep->actual)
 (declare set-char)
 
-(defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim]
+(defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim tramps]
   AMine
   (move-left [mine]
     (map-update (move-robot mine -1 0)))
@@ -40,13 +41,9 @@
   (wait-turn [mine]
     (map-update mine))
   (abort [mine]
-    (->Mine (:grid mine)
-            :abort
-            (+ (:score mine) (* 25 (:dead-lambdas mine)))
-            (:extant-lambdas mine)
-            (:dead-lambdas mine)
-            indices
-            water-sim))
+    (assoc mine
+      :state :abort
+      :score (+ (:score mine) (* 25 dead-lambdas))))
   (location [mine obj]
     (case obj
       (\R \L \O) (index/value-for indices obj)))
@@ -98,62 +95,56 @@
 (defn- move-robot [mine dirx diry]
   (if (done? mine)
     mine
-    (let [[grid state score extant-lambdas dead-lambdas indices]
+    (let [new-keys
           (let [{:keys [grid state score extant-lambdas dead-lambdas indices]} mine
                 [robot-x robot-y] (location mine \R)
                 new-robot-x (+ dirx robot-x)
                 new-robot-y (+ diry robot-y)]
             (when (not (inside? mine new-robot-x new-robot-y))
-              [grid state score extant-lambdas dead-lambdas indices])
+              {})
             (case (object-at mine new-robot-x new-robot-y)
-              (\space \.) [(set-chars grid     robot-x     robot-y \space
-                                           new-robot-x new-robot-y \R)
-                           state
-                           score
-                           extant-lambdas
-                           dead-lambdas
+              (\space \.) {:grid
+                           (set-chars grid     robot-x     robot-y \space
+                                           new-robot-x new-robot-y \R),
+                           
+                           :indices
                            (-> indices
                                (index/remove-from \R [robot-x robot-y])
-                               (index/add-to \R [new-robot-x new-robot-y]))]
+                               (index/add-to \R [new-robot-x new-robot-y]))}
               
-              \\ [(set-chars grid     robot-x     robot-y \space
-                                  new-robot-x new-robot-y \R)
-                  state
-                  (+ score 25)
-                  (dec extant-lambdas)
-                  (inc dead-lambdas)
-                  (-> indices
-                      (index/remove-from \\ [new-robot-x new-robot-y])
-                      (index/remove-from \R [robot-x robot-y])
-                      (index/add-to \R [new-robot-x new-robot-y]))]
+              \\ {:grid (set-chars grid     robot-x     robot-y \space
+                                        new-robot-x new-robot-y \R),
+                  :score (+ score 25)
+                  :extant-lambdas (dec extant-lambdas)
+                  :dead-lambdas (inc dead-lambdas)
+                  :indices (-> indices
+                               (index/remove-from \\ [new-robot-x new-robot-y])
+                               (index/remove-from \R [robot-x robot-y])
+                               (index/add-to \R [new-robot-x new-robot-y]))}
               
-              \O [(set-chars grid     robot-x     robot-y \space
-                                  new-robot-x new-robot-y \R)
-                  :winning
-                  (dec (+ (* 50 dead-lambdas) score))
-                  extant-lambdas
-                  dead-lambdas
-                  (-> indices
-                      (index/remove-from \R [robot-x robot-y])
-                      (index/add-to \R [new-robot-x new-robot-y]))]
+              \O {:grid (set-chars grid     robot-x     robot-y \space
+                                        new-robot-x new-robot-y \R)
+                  :state :winning
+                  :score (dec (+ (* 50 dead-lambdas) score))
+                  :indices (-> indices
+                               (index/remove-from \R [robot-x robot-y])
+                               (index/add-to \R [new-robot-x new-robot-y]))}
               
               \* (if (not= 0 dirx)
                    (let [new-rock-x (+ robot-x dirx dirx)]
                      (if (not= \space (object-at mine new-rock-x robot-y))
-                       [grid state score extant-lambdas dead-lambdas indices]
-                       [(set-chars grid     robot-x     robot-y \space
-                                        new-robot-x new-robot-y \R
-                                         new-rock-x    robot-y \*)
-                        state score extant-lambdas dead-lambdas
-                        (-> indices
-                            (index/remove-from \* [new-robot-x new-robot-y])
-                            (index/add-to \* [ new-rock-x     robot-y])
-                            (index/remove-from \R [robot-x robot-y])
-                            (index/add-to \R [new-robot-x new-robot-y]))]))
-                   [grid state score extant-lambdas dead-lambdas indices])
-              
-              [grid state score extant-lambdas dead-lambdas indices]))]
-      (->Mine grid state score extant-lambdas dead-lambdas indices (:water-sim mine)))))
+                       {}
+                       {:grid (set-chars grid     robot-x     robot-y \space
+                                              new-robot-x new-robot-y \R
+                                               new-rock-x     robot-y \*)
+                        :indices (-> indices
+                                     (index/remove-from \* [new-robot-x new-robot-y])
+                                     (index/add-to \* [ new-rock-x     robot-y])
+                                     (index/remove-from \R [robot-x robot-y])
+                                     (index/add-to \R [new-robot-x new-robot-y]))}))
+                   {})
+              {}))]
+      (into mine new-keys))))
 
 (defn- map-update [mine]
   (if (done? mine)
@@ -171,13 +162,12 @@
                                                                 (index/remove-from \L closed-lift)
                                                                 (index/add-to \O closed-lift))]
                                                            [new-grid new-indices]))]
-                            (->Mine new-grid
-                                    (if (not (water/operating? new-water-sim)) :losing new-state)
-                                    (dec score)
-                                    extant-lambdas
-                                    dead-lambdas
-                                    new-indices
-                                    new-water-sim))
+                            (assoc mine
+                              :grid new-grid
+                              :state (if (not (water/operating? new-water-sim)) :losing new-state)
+                              :score (dec score)
+                              :indices new-indices
+                              :water-sim new-water-sim))
                           (recur rest-rocks
                                  (let [[x y] rock]
                                    (cond
@@ -373,7 +363,8 @@
                (let [values (index/set-for updated-indices key)
                      updated-values (map (fn [c] (update-in c [1] #(- (count grid) %))) values)]
                  (recur rest-keys (index/add-all (index/clear updated-indices key) key updated-values)))))
-           (water/->WaterSim water flooding waterproof 0 0))))
+           (water/->WaterSim water flooding waterproof 0 0)
+           (tramps/create-trampoline-system trampolines))))
 
 (defn mine-from-thing [t]
   (mine-from-reader (io/reader t)))
