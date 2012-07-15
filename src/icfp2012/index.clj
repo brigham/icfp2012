@@ -8,7 +8,8 @@
   (clear [group key])
   (remove-from [group key value])
   (add-to [group key value])
-  (add-all [group key values]))
+  (add-all [group key values])
+  (remove-all [group key values]))
 
 (declare ->IndexGroup)
 
@@ -27,6 +28,10 @@
   (add-all [group key values]
     (if (> (count values) 0)
       (->IndexGroup (update-in storage [key] #(apply conj % values)))
+      group))
+  (remove-all [group key values]
+    (if (> (count values) 0)
+      (->IndexGroup (update-in storage [key] #(apply disj % values)))
       group))
   (set-for [group key]
     (get storage key))

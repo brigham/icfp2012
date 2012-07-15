@@ -96,54 +96,73 @@
   (if (done? mine)
     mine
     (let [new-keys
-          (let [{:keys [grid state score extant-lambdas dead-lambdas indices]} mine
+          (let [{:keys [grid state score extant-lambdas dead-lambdas indices tramps]} mine
                 [robot-x robot-y] (location mine \R)
                 new-robot-x (+ dirx robot-x)
                 new-robot-y (+ diry robot-y)]
             (when (not (inside? mine new-robot-x new-robot-y))
               {})
-            (case (object-at mine new-robot-x new-robot-y)
-              (\space \.) {:grid
-                           (set-chars grid     robot-x     robot-y \space
-                                           new-robot-x new-robot-y \R),
-                           
-                           :indices
-                           (-> indices
-                               (index/remove-from \R [robot-x robot-y])
-                               (index/add-to \R [new-robot-x new-robot-y]))}
-              
-              \\ {:grid (set-chars grid     robot-x     robot-y \space
+            (let [ch (object-at mine new-robot-x new-robot-y)]
+              (case ch
+                (\space \.) {:grid
+                             (set-chars grid     robot-x     robot-y \space
                                         new-robot-x new-robot-y \R),
-                  :score (+ score 25)
-                  :extant-lambdas (dec extant-lambdas)
-                  :dead-lambdas (inc dead-lambdas)
-                  :indices (-> indices
-                               (index/remove-from \\ [new-robot-x new-robot-y])
-                               (index/remove-from \R [robot-x robot-y])
-                               (index/add-to \R [new-robot-x new-robot-y]))}
-              
-              \O {:grid (set-chars grid     robot-x     robot-y \space
-                                        new-robot-x new-robot-y \R)
-                  :state :winning
-                  :score (dec (+ (* 50 dead-lambdas) score))
-                  :indices (-> indices
-                               (index/remove-from \R [robot-x robot-y])
-                               (index/add-to \R [new-robot-x new-robot-y]))}
-              
-              \* (if (not= 0 dirx)
-                   (let [new-rock-x (+ robot-x dirx dirx)]
-                     (if (not= \space (object-at mine new-rock-x robot-y))
-                       {}
-                       {:grid (set-chars grid     robot-x     robot-y \space
-                                              new-robot-x new-robot-y \R
-                                               new-rock-x     robot-y \*)
-                        :indices (-> indices
-                                     (index/remove-from \* [new-robot-x new-robot-y])
-                                     (index/add-to \* [ new-rock-x     robot-y])
-                                     (index/remove-from \R [robot-x robot-y])
-                                     (index/add-to \R [new-robot-x new-robot-y]))}))
-                   {})
-              {}))]
+                             
+                             :indices
+                             (-> indices
+                                 (index/remove-from \R [robot-x robot-y])
+                                 (index/add-to \R [new-robot-x new-robot-y]))}
+                
+                \\ {:grid (set-chars grid     robot-x     robot-y \space
+                                     new-robot-x new-robot-y \R),
+                    :score (+ score 25)
+                    :extant-lambdas (dec extant-lambdas)
+                    :dead-lambdas (inc dead-lambdas)
+                    :indices (-> indices
+                                 (index/remove-from \\ [new-robot-x new-robot-y])
+                                 (index/remove-from \R [robot-x robot-y])
+                                 (index/add-to \R [new-robot-x new-robot-y]))}
+                
+                \O {:grid (set-chars grid     robot-x     robot-y \space
+                                     new-robot-x new-robot-y \R)
+                    :state :winning
+                    :score (dec (+ (* 50 dead-lambdas) score))
+                    :indices (-> indices
+                                 (index/remove-from \R [robot-x robot-y])
+                                 (index/add-to \R [new-robot-x new-robot-y]))}
+                
+                \* (if (not= 0 dirx)
+                     (let [new-rock-x (+ robot-x dirx dirx)]
+                       (if (not= \space (object-at mine new-rock-x robot-y))
+                         {}
+                         {:grid (set-chars grid     robot-x     robot-y \space
+                                           new-robot-x new-robot-y \R
+                                           new-rock-x     robot-y \*)
+                          :indices (-> indices
+                                       (index/remove-from \* [new-robot-x new-robot-y])
+                                       (index/add-to \* [ new-rock-x     robot-y])
+                                       (index/remove-from \R [robot-x robot-y])
+                                       (index/add-to \R [new-robot-x new-robot-y]))}))
+                     {})
+
+                (\A \B \C \D \E \F \G \H \I) (let [destination (tramps/destination tramps ch)
+                                                   all-sources (tramps/sources tramps destination)
+                                                   dest-location (first (filter #(= destination (% 3))
+                                                                                (locations mine \1)))
+                                                   source-locations (filter #(all-sources (% 3))
+                                                                            (locations mine \A))]
+                                               {:grid (set-chars grid
+                                                                 robot-x robot-y \space
+                                                                 new-robot-x new-robot-y \space
+                                                                 (dest-location 0) (dest-location 1) \R)
+                                                :indices (-> indices
+                                                             (index/remove-from \R [robot-x robot-y])
+                                                             (index/add-to \R [(dest-location 0) (dest-location 1)])
+                                                             (index/remove-from \1 dest-location)
+                                                             (index/remove-all \A source-locations))
+                                                :tramps (tramps/activate tramps ch)})
+                
+                {})))]
       (into mine new-keys))))
 
 (defn- map-update [mine]
