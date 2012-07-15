@@ -5,6 +5,14 @@
            [icfp2012.water :as water])
   (import [java.io StringReader]))
 
+(defn print-return
+  ([o]
+     (println o)
+     o)
+  ([msg o]
+     (println msg o)
+     o))
+
 (defprotocol AMine
   (move-left [mine])
   (move-right [mine])
@@ -49,7 +57,7 @@
       (\R \L \O) (index/value-for indices obj)))
   (locations [mine obj]
     (case obj
-      (\* \\) (seq (index/set-for indices obj))))
+      (\* \\ \A \1) (seq (index/set-for indices obj))))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
@@ -145,16 +153,17 @@
                                        (index/add-to \R [new-robot-x new-robot-y]))}))
                      {})
 
-                (\A \B \C \D \E \F \G \H \I) (let [destination (tramps/destination tramps ch)
+                (\A \B \C \D \E \F \G \H \I) (let [destination (tramps/destination tramps (str ch))
                                                    all-sources (tramps/sources tramps destination)
-                                                   dest-location (first (filter #(= destination (% 3))
+                                                   dest-location (first (filter #(= destination (% 2))
                                                                                 (locations mine \1)))
-                                                   source-locations (filter #(all-sources (% 3))
+                                                   source-locations (filter #(all-sources (% 2))
                                                                             (locations mine \A))]
-                                               {:grid (set-chars grid
-                                                                 robot-x robot-y \space
-                                                                 new-robot-x new-robot-y \space
-                                                                 (dest-location 0) (dest-location 1) \R)
+                                               {:grid (apply set-chars grid
+                                                             robot-x robot-y \space
+                                                             (dest-location 0) (dest-location 1) \R
+                                                             (flatten (map (fn [[x y c]] [x y \space])
+                                                                           source-locations)))
                                                 :indices (-> indices
                                                              (index/remove-from \R [robot-x robot-y])
                                                              (index/add-to \R [(dest-location 0) (dest-location 1)])
@@ -340,13 +349,13 @@
                                                       (conj row ch)
                                                       max-length
                                                       lambdas
-                                                      (index/add-to indices \A [(inc (count row)) (count grid) ch]))
+                                                      (index/add-to indices \A [(inc (count row)) (count grid) (str ch)]))
 
                   (\1 \2 \3 \4 \5 \6 \7 \8 \9) (recur grid
                                                       (conj row ch)
                                                       max-length
                                                       lambdas
-                                                      (index/add-to indices \1 [(inc (count row)) (count grid) ch])))))))
+                                                      (index/add-to indices \1 [(inc (count row)) (count grid) (str ch)])))))))
 
         [water flooding waterproof trampolines]
         (loop [{:keys [water

@@ -22,7 +22,7 @@
 (defn- map-invert-all [m]
   (apply merge-with into
          (for [[ok ov] m]
-           {ov [#{ok}]})))
+           {ov #{ok}})))
 
 (defn create-trampoline-system [source->dest]
   (->TrampolineSystem source->dest (map-invert-all source->dest)))
