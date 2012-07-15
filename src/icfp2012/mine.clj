@@ -293,7 +293,9 @@
                            (index/create-index \R compare-coords)
                            (index/create-index \L compare-coords)
                            (index/create-index \* compare-coords)
-                           (index/create-index \\ compare-coords))]
+                           (index/create-index \\ compare-coords)
+                           (index/create-index \A compare-coords)
+                           (index/create-index \1 compare-coords))]
           (let [next (.read r)]
             (if (= -1 next)
               (if (> (count row) 0)
@@ -323,20 +325,38 @@
                             (conj row ch)
                             max-length
                             (inc lambdas)
-                            (index/add-to indices ch [(inc (count row)) (count grid)])))))))
+                            (index/add-to indices ch [(inc (count row)) (count grid)]))
 
-        [water flooding waterproof]
-        (loop [water 0
-               flooding 0
-               waterproof 10]
+                  (\A \B \C \D \E \F \G \H \I) (recur grid
+                                                      (conj row ch)
+                                                      max-length
+                                                      lambdas
+                                                      (index/add-to indices \A [(inc (count row)) (count grid) ch]))
+
+                  (\1 \2 \3 \4 \5 \6 \7 \8 \9) (recur grid
+                                                      (conj row ch)
+                                                      max-length
+                                                      lambdas
+                                                      (index/add-to indices \1 [(inc (count row)) (count grid) ch])))))))
+
+        [water flooding waterproof trampolines]
+        (loop [{:keys [water
+                       flooding
+                       waterproof
+                       trampolines] :as whole-map} {:water 0
+                                                    :flooding 0
+                                                    :waterproof 10
+                                                    :trampolines {}}]
           (let [line (.readLine r)]
             (if (nil? line)
-              [water flooding waterproof]
-              (let [[key value] (.split line "\\s+")]
+              [water flooding waterproof trampolines]
+              (let [[key value] (.split line "\\s+" 2)]
                 (case key
-                  "Water" (recur (Integer/parseInt value) flooding waterproof)
-                  "Flooding" (recur water (Integer/parseInt value) waterproof)
-                  "Waterproof" (recur water flooding (Integer/parseInt value)))))))]
+                  "Water" (recur (assoc whole-map :water (Integer/parseInt value)))
+                  "Flooding" (recur (assoc whole-map :flooding (Integer/parseInt value)))
+                  "Waterproof" (recur (assoc whole-map :waterproof (Integer/parseInt value)))
+                  "Trampoline" (let [[source dest] (.split value "\\s+targets\\s+")]
+                                 (recur (assoc whole-map :trampolines (assoc trampolines source dest)))))))))]
     
     (->Mine (vec (map #(let [deficit (- max-length (count %))]
                         (if (> deficit 0)
