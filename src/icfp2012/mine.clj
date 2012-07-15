@@ -26,6 +26,7 @@
   (move-down [mine])
   (wait-turn [mine])
   (abort [mine])
+  (shave [mine])
   (location [mine obj])
   (locations [mine obj])
   (done? [mine])
@@ -40,7 +41,7 @@
 (declare move-robot)
 (declare map-update)
 (declare rep->actual)
-(declare set-char)
+(declare set-chars)
 
 (defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim tramps beard-rate beard-remaining razors]
   AMine
@@ -58,6 +59,28 @@
     (assoc mine
       :state :abort
       :score (+ (:score mine) (* 25 dead-lambdas))))
+  (shave [mine]
+    (map-update
+     (if (<= razors 0)
+       mine
+       (let [[x y] (location mine \R)
+             shave (fn [[new-grid new-indices] cx cy]
+                     (if (= \W (object-at mine cx cy))
+                       [(set-chars new-grid cx cy \space)
+                        (index/remove-from new-indices \W [cx cy])]
+                       [new-grid new-indices]))
+             [new-grid new-indices] (-> [grid indices]
+                                        (shave (dec x) (dec y))
+                                        (shave x (dec y))
+                                        (shave (inc x) (dec y))
+                                        (shave (dec x) y)
+                                        (shave (inc x) y)
+                                        (shave (dec x) (inc y))
+                                        (shave x (inc y))
+                                        (shave (inc x) (inc y)))]
+         (assoc mine
+           :grid new-grid
+           :indices new-indices)))))
   (location [mine obj]
     (case obj
       (\R \L \O) (index/value-for indices obj)))
@@ -112,7 +135,7 @@
   (if (done? mine)
     mine
     (let [new-keys
-          (let [{:keys [grid state score extant-lambdas dead-lambdas indices tramps]} mine
+          (let [{:keys [grid state score extant-lambdas dead-lambdas indices tramps razors]} mine
                 [robot-x robot-y] (location mine \R)
                 new-robot-x (+ dirx robot-x)
                 new-robot-y (+ diry robot-y)]
@@ -120,14 +143,14 @@
               {})
             (let [ch (object-at mine new-robot-x new-robot-y)]
               (case ch
-                (\space \.) {:grid
-                             (set-chars grid     robot-x     robot-y \space
-                                        new-robot-x new-robot-y \R),
-                             
-                             :indices
-                             (-> indices
-                                 (index/remove-from \R [robot-x robot-y])
-                                 (index/add-to \R [new-robot-x new-robot-y]))}
+                (\! \space \.) {:grid
+                                (set-chars grid     robot-x     robot-y \space
+                                           new-robot-x new-robot-y \R),
+                                :indices
+                                (-> indices
+                                    (index/remove-from \R [robot-x robot-y])
+                                    (index/add-to \R [new-robot-x new-robot-y]))
+                                :razors (if (= \! ch) (inc razors) razors)}
                 
                 \\ {:grid (set-chars grid     robot-x     robot-y \space
                                      new-robot-x new-robot-y \R),
@@ -331,7 +354,8 @@
      \U (move-up mine)
      \D (move-down mine)
      \W (wait-turn mine)
-     \A (abort mine))))
+     \A (abort mine)
+     \S (shave mine))))
 
 (defn next-mines [mine]
   (if (done? mine)
