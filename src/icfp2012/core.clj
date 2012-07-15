@@ -16,6 +16,7 @@
                               (println "Turn:" (get-in mine [:water-sim :steps])
                                        "Next Rise:" (water/steps-til-rise (:water-sim mine))
                                        "Air:" (water/steps-til-lose (:water-sim mine))
+                                       "Lambdas:" (:extant-lambdas mine)
                                        (str (char 27) "[K"))
                               (println (mine/->String mine))
                               (print (str (char 27) "[A"))
