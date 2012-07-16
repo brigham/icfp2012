@@ -3,7 +3,8 @@
 (defprotocol ATrampolineSystem
   (activate [ts letter])
   (destination [ts letter])
-  (sources [ts number]))
+  (destinations [ts])
+  (sources [ts] [ts number]))
 
 (declare ->TrampolineSystem)
 
@@ -11,8 +12,12 @@
   ATrampolineSystem
   (destination [ts letter]
     (source->dest letter))
+  (destinations [ts]
+    (keys dest->source))
+  (sources [ts]
+    (keys source->dest))
   (sources [ts number]
-    (dest->source number))
+     (dest->source number))
   (activate [ts letter]
     (let [dest (destination ts letter)
           all-src (sources ts dest)]

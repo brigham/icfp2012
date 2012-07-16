@@ -7,8 +7,18 @@
 (defn a* [initial-state next-states-fn heuristic-fn goal?-fn max-iterations]
   (letfn [(rec [states seen remaining-iterations]
             (let [next (assoc (q/peek states) :iter (+ 1 (- max-iterations remaining-iterations)))]
-              (if (or (goal?-fn (:state next)) (= 0 remaining-iterations))
-                next
+              (if (or (zero? (q/size states))
+                      (nil? (:state next))
+                      (goal?-fn (:state next))
+                      (zero? remaining-iterations))
+                (do
+                  (when (zero? (q/size states))
+                    (println "Ran out of queue items at" remaining-iterations))
+                  (when (zero? remaining-iterations)
+                    (println "Ran out of time in A*"))
+                  (when (nil? (:state next))
+                    (println "Got null state: " next))
+                  next)
                 (recur
                  (apply q/enqueue
                   (q/dequeue states)

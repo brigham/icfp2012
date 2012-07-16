@@ -2,6 +2,14 @@
   (require [icfp2012.mine :as mine]
            [hanoi.a-star :as a*]))
 
+(defn print-return
+  ([o]
+     (println o)
+     o)
+  ([msg o]
+     (println msg o)
+     o))
+
 (defn mine-penalty [mine]
   (case (mine/state mine)
     :losing
@@ -27,10 +35,18 @@
   (+ (Math/abs (- (a 0) (b 0)))
      (Math/abs (- (a 1) (b 1)))))
 
+(defn tramp-distance [mine r x y def]
+  (let [dists (map (fn [sym]
+                     (let [tr (mine/trampoline-location mine sym)
+                           ta (mine/target-location mine (mine/trampoline-target mine sym))]
+                       (+ (city-dist r tr)
+                          (city-dist [x y] ta)))) (mine/trampolines mine))]
+    (apply min def dists)))
+
 (defn goto-heuristic [x y]
   (fn [mine]
     (let [r (mine/location mine \R)]
-      (city-dist r [x y]))))
+      (tramp-distance mine r x y (city-dist r [x y])))))
 
 (defn- mine-heuristic [mine]
   (let [lambdas (mine/locations mine \\)
@@ -69,13 +85,51 @@
             limit)))
 
 (defn search-to
-  ([mine x y] (search-to mine x y 500))
+  ([mine x y] (search-to mine x y 100000))
   ([mine x y limit]
      (a*/a* mine
             possible-mines-for-a*
             (goto-heuristic x y)
             (goal-fn x y)
             limit)))
+
+(defn actual-dist [mine dx dy]
+  (:cost (search-to mine dx dy)))
+
+(defn solve
+  ([mine]
+     (solve mine 2000))
+  ([mine limit]
+     (let [lambdas (mine/locations mine \\)
+           robot-dists (into {} (map (fn [[lx ly :as key]] [key (actual-dist mine lx ly)]) lambdas))
+           [lift-x lift-y] (mine/location mine \L)
+           robot-at-lift (mine/place-bot mine lift-x lift-y)
+           lift-dists (into {} (map (fn [[lx ly :as key]] [key (actual-dist robot-at-lift lx ly)]) lambdas))
+           [robot-closest lift-closest] (loop [robot-closest []
+                                               lift-closest []
+                                               [lambda & rest-lambdas] lambdas]
+                                          (if (not lambda)
+                                            [robot-closest lift-closest]
+                                            (if (> (robot-dists lambda) (lift-dists lambda))
+                                              (recur
+                                               robot-closest
+                                               (conj lift-closest lambda)
+                                               rest-lambdas)
+                                              (recur
+                                               (conj robot-closest lambda)
+                                               lift-closest
+                                               rest-lambdas))))
+           robot-closest (sort-by #(robot-dists %) robot-closest)
+           lift-closest (sort-by #(lift-dists %) #(compare %2 %1) lift-closest)]
+       (loop [[[lx ly] & rest-closest] (concat robot-closest lift-closest [[lift-x lift-y]])
+              curr-mine mine
+              moves []]
+         (if (nil? lx)
+           (apply str moves)
+           (let [result (search-to curr-mine lx ly)]
+             (recur rest-closest
+                    (:state result)
+                    (apply conj moves (reverse (filter (complement nil?) (map :move (a*/solution-seq result))))))))))))
 
 (defn search
   ([mine]

@@ -5,8 +5,6 @@
            [icfp2012.water :as water])
   (import [java.io StringReader]))
 
-(set! *warn-on-reflection* true)
-
 (defn print-return
   ([o]
      (println o)
@@ -22,6 +20,7 @@
       cmp-y)))
 
 (defprotocol AMine
+  (place-bot [mine x y])
   (move-left [mine])
   (move-right [mine])
   (move-up [mine])
@@ -31,6 +30,12 @@
   (shave [mine])
   (location [mine obj])
   (locations [mine obj])
+  (trampolines [mine])
+  (targets [mine])
+  (trampoline-location [mine which])
+  (target-location [mine which])
+  (trampoline-target [mine which])
+  (target-trampolines [mine which])
   (done? [mine])
   (inside? [mine x y])
   (score [mine])
@@ -47,6 +52,14 @@
 
 (defrecord Mine [grid state score extant-lambdas dead-lambdas indices water-sim tramps beard-rate beard-remaining razors]
   AMine
+  (place-bot [mine x y]
+    (let [[rx ry] (location mine \R)]
+      (assoc mine
+        :grid (set-chars grid rx ry \space
+                               x  y \R)
+        :indices (-> indices
+                     (index/remove-from \R [rx ry])
+                     (index/add-to \R [x y])))))
   (move-left [mine]
     (map-update (move-robot mine -1 0)))
   (move-right [mine]
@@ -89,6 +102,20 @@
   (locations [mine obj]
     (case obj
       (\* \\ \A \1 \W) (seq (index/set-for indices obj))))
+  (trampolines [mine]
+    (tramps/sources tramps))
+  (targets [mine]
+    (tramps/destinations tramps))
+  (trampoline-location [mine which]
+    (subvec (first (filter #(= which (% 2))
+                           (locations mine \A))) 0 2))
+  (target-location [mine which]
+    (subvec (first (filter #(= which (% 2))
+                           (locations mine \1))) 0 2))
+  (trampoline-target [mine which]
+    (tramps/destination tramps which))
+  (target-trampolines [mine which]
+    (tramps/sources tramps which))
   (done? [mine]
     (not= :running state))
   (inside? [mine x y]
@@ -186,7 +213,7 @@
                                             (index/add-to \R [new-robot-x new-robot-y]))}))
                           {})
 
-                (\A \B \C \D \E \F \G \H \I) (let [destination (tramps/destination tramps (str ch))
+                (\A \B \C \D \E \F \G \H \I) (let [destination (tramps/destination tramps ch)
                                                    all-sources (tramps/sources tramps destination)
                                                    dest-location (first (filter #(= destination (% 2))
                                                                                 (locations mine \1)))
@@ -453,13 +480,13 @@
                                                       (conj row ch)
                                                       max-length
                                                       lambdas
-                                                      (index/add-to indices \A [(inc (count row)) (count grid) (str ch)]))
+                                                      (index/add-to indices \A [(inc (count row)) (count grid) ch]))
 
                   (\1 \2 \3 \4 \5 \6 \7 \8 \9) (recur grid
                                                       (conj row ch)
                                                       max-length
                                                       lambdas
-                                                      (index/add-to indices \1 [(inc (count row)) (count grid) (str ch)])))))))
+                                                      (index/add-to indices \1 [(inc (count row)) (count grid) ch])))))))
 
         {:keys [water flooding waterproof trampolines growth razors]}
         (loop [whole-map {:water 0
@@ -471,15 +498,16 @@
           (let [^String line (.readLine r)]
             (if (nil? line)
               whole-map
-              (let [[^String key ^String value] (.split line "\\s+" 2)]
+              (let [[^String key ^String value] (.split (.trim line) "\\s+" 2)]
                 (case key
+                  "" (recur whole-map)
                   "Water" (recur (assoc whole-map :water (Integer/parseInt value)))
                   "Flooding" (recur (assoc whole-map :flooding (Integer/parseInt value)))
                   "Waterproof" (recur (assoc whole-map :waterproof (Integer/parseInt value)))
                   "Growth" (recur (assoc whole-map :growth (Integer/parseInt value)))
                   "Razors" (recur (assoc whole-map :razors (Integer/parseInt value)))
                   "Trampoline" (let [[source dest] (.split value "\\s+targets\\s+")]
-                                 (recur (update-in whole-map [:trampolines] #(assoc % source dest)))))))))]
+                                 (recur (update-in whole-map [:trampolines] #(assoc % (.charAt source 0) (.charAt dest 0))))))))))]
     
     (->Mine (vec (map #(let [deficit (- max-length (count %))]
                         (if (> deficit 0)

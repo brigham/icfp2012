@@ -53,7 +53,7 @@
         ))))
 
 (defn- goto-with-a* [mine x y]
-  (let [the-search (time (solver/search-to mine x y 500))]
+  (let [the-search (time (solver/search-to mine x y 200000))]
     (let [solution (a*/solution-seq the-search)]
       (when (not (nil? solution))
         (dump-solution solution)))))
@@ -68,8 +68,8 @@
     (println "Moves:" (apply str moves))))
 
 (defn -main [& args]
-  (let [mine (mine/mine-from-thing (first args))]
+  (let [mine (mine/mine-from-thing (if (empty? args) System/in (first args)))]
     (case (count args)
-      1 (solve-mine-with-a* mine)
+      (0 1) (solver/solve mine)
       2 (run-solution mine (second args))
       3 (goto-with-a* mine (Integer/parseInt (nth args 1)) (Integer/parseInt (nth args 2))))))
