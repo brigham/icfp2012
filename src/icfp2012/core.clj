@@ -5,6 +5,8 @@
            [icfp2012.solver :as solver]
            [icfp2012.water :as water]))
 
+(set! *warn-on-reflection* true)
+
 (defn- run-solution [mine moves]
   (println "Water Level:" (get-in mine [:water-sim :water-level])
            "Flood Rate:" (get-in mine [:water-sim :flood-rate])
@@ -38,16 +40,23 @@
     (Thread/sleep 60))
   (dotimes [y (second (mine/dimensions (:state (first solution))))]
     (println))
+  (println (map :iter solution))
   (println (map :cost solution))
   (println (apply str (reverse (map :move solution)))))
 
 (defn- solve-mine-with-a* [mine]
   (loop [the-search (time (solver/search-a* mine 5000))]
-    (let [solution (a*/solution-seq (q/next the-search))]
+    (let [solution (a*/solution-seq the-search)]
       (when (not (nil? solution))
         (dump-solution solution)
         ;(recur (q/dequeue the-search))
         ))))
+
+(defn- goto-with-a* [mine x y]
+  (let [the-search (time (solver/search-to mine x y 500))]
+    (let [solution (a*/solution-seq the-search)]
+      (when (not (nil? solution))
+        (dump-solution solution)))))
 
 (defn- solve-mine [mine]
   (let [[solution moves] (time (solver/search mine 800000))]
@@ -60,6 +69,7 @@
 
 (defn -main [& args]
   (let [mine (mine/mine-from-thing (first args))]
-    (if (> (count args) 1)
-      (run-solution mine (second args))
-      (solve-mine-with-a* mine))))
+    (case (count args)
+      1 (solve-mine-with-a* mine)
+      2 (run-solution mine (second args))
+      3 (goto-with-a* mine (Integer/parseInt (nth args 1)) (Integer/parseInt (nth args 2))))))

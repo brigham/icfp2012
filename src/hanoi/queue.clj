@@ -1,18 +1,19 @@
-(ns hanoi.queue)
+(ns hanoi.queue
+  (require [clojure.data.priority-map :as pmap]))
 
-(defn make-queue [comp-fn]
-  {:comp-fn comp-fn :queue (sorted-set-by comp-fn)})
+(defn make-queue []
+  (pmap/priority-map))
 
 (defn enqueue [queue & elements]
   (if (empty? elements)
     queue
-    (assoc queue :queue (apply conj (queue :queue) elements))))
+    (into queue elements)))
 
-(defn next [queue]
-  (first (queue :queue)))
+(defn peek [queue]
+  (first (clojure.core/peek queue)))
 
 (defn size [queue]
-  (count (queue :queue)))
+  (count queue))
 
 (defn dequeue [queue]
-  (assoc queue :queue (disj (queue :queue) (next queue))))
+  (pop queue))

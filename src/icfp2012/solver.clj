@@ -2,21 +2,35 @@
   (require [icfp2012.mine :as mine]
            [hanoi.a-star :as a*]))
 
-(defn- compare-mines [a b]
-  (compare (get-in a [:water-sim :steps]) (get-in b [:water-sim :steps])))
+(defn mine-penalty [mine]
+  (case (mine/state mine)
+    :losing
+    (* 50 (+ (:extant-lambdas mine)
+             (:dead-lambdas mine)))
+
+    :abort
+    (* 25 (+ (:extant-lambdas mine)
+             (:dead-lambdas mine)))
+                                       
+    0))
 
 (defn- possible-mines [mine]
-  (map (partial mine/execute-move mine) (mine/possible-moves mine)))
+  (mine/next-mines mine))
 
-(defn- possible-mines-for-a* [mine]
-  (map (fn [[move next-mine]] {:cost 1
+(defn possible-mines-for-a* [mine]
+  (map (fn [[move next-mine]] {:cost (+ 1 (mine-penalty next-mine))
                                :state next-mine
                                :move move})
        (mine/next-mines mine)))
 
 (defn- city-dist [a b]
   (+ (Math/abs (- (a 0) (b 0)))
-     (Math/abs (- (a 0) (b 0)))))
+     (Math/abs (- (a 1) (b 1)))))
+
+(defn goto-heuristic [x y]
+  (fn [mine]
+    (let [r (mine/location mine \R)]
+      (city-dist r [x y]))))
 
 (defn- mine-heuristic [mine]
   (let [lambdas (mine/locations mine \\)
@@ -39,15 +53,28 @@
 (defn- winning-mine? [mine]
   (= :winning (mine/state mine)))
 
+(defn goal-fn [x y]
+  (fn [mine]
+    (let [r (mine/location mine \R)]
+      (= [x y] r))))
+
 (defn search-a*
   ([mine]
      (search-a* mine 500))
   ([mine limit]
      (a*/a* mine
-            compare-mines
             possible-mines-for-a*
             mine-heuristic
             winning-mine?
+            limit)))
+
+(defn search-to
+  ([mine x y] (search-to mine x y 500))
+  ([mine x y limit]
+     (a*/a* mine
+            possible-mines-for-a*
+            (goto-heuristic x y)
+            (goal-fn x y)
             limit)))
 
 (defn search

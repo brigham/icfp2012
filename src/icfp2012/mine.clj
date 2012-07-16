@@ -5,6 +5,8 @@
            [icfp2012.water :as water])
   (import [java.io StringReader]))
 
+(set! *warn-on-reflection* true)
+
 (defn print-return
   ([o]
      (println o)
@@ -346,28 +348,40 @@
 (defn possible-moves [mine]
   [\L \R \U \D \W])
 
-(defn execute-move [mine ch]
-  (let [ch (if (char? ch) ch (.charAt ch 0))]
-   (case ch
-     \L (move-left mine)
-     \R (move-right mine)
-     \U (move-up mine)
-     \D (move-down mine)
-     \W (wait-turn mine)
-     \A (abort mine)
-     \S (shave mine))))
+(defn execute-move [mine ^Character ch]
+  (case ch
+    \L (move-left mine)
+    \R (move-right mine)
+    \U (move-up mine)
+    \D (move-down mine)
+    \W (wait-turn mine)
+    \A (abort mine)
+    \S (shave mine)))
 
 (defn next-mines [mine]
   (if (done? mine)
     []
     (concat
-     (let [original-robot (location mine \R)] ;; XXX: gross, should be on protocol
+     (let [original-robot (location mine \R)] 
        (filter #(not= original-robot (location (second %) \R))
                (map #(vector % (execute-move mine %)) [\L \R \U \D])))
      (let [waiting (wait-turn mine)]
-       (if (not= (:grid mine) (:grid waiting))
-         [[\W waiting]]
-         [])))))
+       (when (not= (:grid mine) (:grid waiting))
+         [[\W waiting]]))
+     (if (and (> (count (locations mine \W)) 0)
+              (> (:razors mine) 0))
+       (let [[rx ry] (location mine \R)]
+         (when (conj #{}
+              (object-at mine (dec rx) (dec ry))
+              (object-at mine rx (dec ry))
+              (object-at mine (inc rx) (dec ry))
+              (object-at mine (dec rx) ry)
+              (object-at mine (inc rx) ry)
+              (object-at mine (dec rx) (inc ry))
+              (object-at mine rx (inc ry))
+              (object-at mine (inc rx) (inc ry)) \W)
+           [[\S (shave mine)]])))
+     [[\A (abort mine)]])))
 
 (defn execute-moves
   ([mine s]
@@ -384,7 +398,7 @@
            (cb new-mine)
            (recur (inc i) new-mine))))))
 
-(defn mine-from-reader [r]
+(defn mine-from-reader [^java.io.BufferedReader r]
   (let [[grid max-length lambdas indices]
         (loop [grid []
                row []
@@ -420,7 +434,7 @@
                   (\* \@) (recur grid
                                  (conj row ch)
                                  max-length
-                                 (if (= \@ ch) (inc lambdas) lambdas)
+                                 (if (= ch \@) (inc lambdas) lambdas)
                                  (index/add-to indices \* [(inc (count row)) (count grid)]))
                   
                   \\ (recur grid
@@ -454,10 +468,10 @@
                           :trampolines {}
                           :growth 25
                           :razors 0}]
-          (let [line (.readLine r)]
+          (let [^String line (.readLine r)]
             (if (nil? line)
               whole-map
-              (let [[key value] (.split line "\\s+" 2)]
+              (let [[^String key ^String value] (.split line "\\s+" 2)]
                 (case key
                   "Water" (recur (assoc whole-map :water (Integer/parseInt value)))
                   "Flooding" (recur (assoc whole-map :flooding (Integer/parseInt value)))
